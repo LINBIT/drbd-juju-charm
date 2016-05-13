@@ -1,0 +1,24 @@
+name: python-drbdmanage
+summary: DRBD distributed resource management utility
+maintainer: DRBD-dev <drbd-dev@lists.linbit.com>
+description: |
+  Drbdmanage is a daemon and a command line utility that manages DRBD
+  replicated LVM volumes across a group of machines.  It maintains DRBD
+  configuration an the participating machines. It creates/deletes the
+  backing LVM volumes. It automatically places the backing LVM volumes
+  among the participating machines.
+tags:
+  - storage
+  - openstack
+#provides:
+#  storage
+subordinate: false
+#provides:
+#  provides-relation:
+#    interface: interface-name
+requires:
+  block-storage:
+    interface: interface-name
+#peers:
+#  peer-relation:
+#    interface: interface-name
