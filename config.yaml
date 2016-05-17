@@ -1,14 +1,14 @@
 options:
-  string-option:
+  drbdmanage-cluster-node:
     type: string
-    default: "Default Value"
-    description: "A short description of the configuration option"
-  boolean-option:
-    type: boolean
-    default: False
-    description: "A short description of the configuration option"
-  int-option:
-    type: int
-    default: 9001
-    description: "A short description of the configuration option"
+    default: ""
+    description: "The name of a node in an existing DRBDmanage cluster, which shall be accessed (via SSH) to register this new node. If left empty, no automatic join will be done."
+  drbdmanage-local-vg:
+    type: string
+    default: ""
+    description: "The VG that should be used for local storage. If left empty, this node will become a diskless (pure) client node."
+  drbdmanage-local-lv:
+    type: string
+    default: ""
+    description: "The name of a Thin Pool LV that should be used for DRBDmanage. If empty, Thick LVs will be created."
 

@@ -1,8 +1,190 @@
 #!/bin/bash
-# Here do anything needed to install the service
-# i.e. apt-get install -y foo  or  bzr branch http://myserver/mycode /srv/webroot
-# Make sure this hook exits cleanly and is idempotent, common problems here are
-# failing to account for a debconf question on a dependency, or trying to pull
-# from github without installing git first.
+#
+######################################################################
+#
+# Juju charm for DRBD9 and DRBDmanage
+#
+# Copyright by LINBIT HA Solutions GmbH 2016; see the COPYING file.
+#
+######################################################################
 
-apt-get install -y python-drbdmanage
+
+
+######################################################################
+## Package installation
+######################################################################
+
+status-set maintenance "Installing"
+
+apt-get install --yes software-properties-common sed iproute2 libc-bin lvm2
+add-apt-repository ppa:linbit/linbit-drbd9-stack
+
+apt-get install --yes debhelper python-dbus dbus thin-provisioning-tools drbd-utils drbd-dkms python-drbdmanage
+
+## # ensure we're starting with upstream config file, ie.
+## # overwrite local modifications, so that the automated
+## # processes later on work as intended
+## apt-get install --reinstall -o Dpkg::Options::=--force-confnew python-drbdmanage
+
+
+######################################################################
+## Configuration
+######################################################################
+
+DRBD_CLUSTER_NODE="$(config-get drbdmanage-cluster-node)"
+DRBD_STORAGE_VG="$(config-get drbdmanage-local-vg)"
+DRBD_STORAGE_THIN_LV="$(config-get drbdmanage-local-lv)"
+
+
+######################################################################
+## Local setup.
+######################################################################
+
+function _modify_udev_file {
+    local file="$1"
+    local search="$2"
+    local sed_cmd="$3"
+    local path="/lib/udev/rules.d/${file}"
+
+    if [[ -f "$path" ]] && ! grep "${search}" "$path"; then
+        sudo sed -i "${sed_cmd}" "$path"
+    fi
+}
+
+# Deactivate udev calling blkid etc. on the DRBD backend devices - that is
+# neither needed nor wanted, because blkid having the device open can race
+# with DRBD attaching.
+# This will result in a message like
+#    kernel: [...] drbd CV_...: drbdX: open("/dev/...") failed with -16
+# which means EBUSY
+_modify_udev_file 60-persistent-storage-dm.rules \
+	'ENV{DM_NAME}=="'"${DRBD_DATA_VG}"'-CV_' \
+	's:DM_SUSPENDED.*=="1",.*GOTO="\(.*\)":&\nENV{DM_NAME}=="'"${DRBD_DATA_VG}"'-CV_*", GOTO="\1"\n:'
+_modify_udev_file 80-btrfs-lvm.rules \
+	'ENV{DM_NAME}=="'"${DRBD_DATA_VG}"'-CV_' \
+	's:SUBSYSTEM.="block",.*GOTO="\(.*\)":&\nENV{DM_NAME}=="'"${DRBD_DATA_VG}"'-CV_*", GOTO="\1"\n:'
+
+# The same can happen to the DRBDmanage control volume, too, of course!
+_modify_udev_file 60-persistent-storage-dm.rules \
+	'ENV{DM_NAME}=="'"${DRBD_DRBDCTRL_VG}"'-.drbdctrl' \
+	's:DM_SUSPENDED.*=="1",.*GOTO="\(.*\)":&\nENV{DM_NAME}=="'"${DRBD_DRBDCTRL_VG}"'-.drbdctrl", GOTO="\1"\n:'
+_modify_udev_file 80-btrfs-lvm.rules \
+	'ENV{DM_NAME}=="'"${DRBD_DRBDCTRL_VG}"'-.drbdctrl' \
+	's:SUBSYSTEM.="block",.*GOTO="\(.*\)":&\nENV{DM_NAME}=="'"${DRBD_DRBDCTRL_VG}"'-.drbdctrl", GOTO="\1"\n:'
+
+
+######################################################################
+## Local storage configuration
+######################################################################
+
+no_stor=""
+
+if [[ -z "$DRBD_STORAGE_VG" ]]
+then
+    no_stor="--no-storage"
+else
+	juju-log "Trying VG '$DRBD_STORAGE_VG'"
+
+	if ! vgs "$DRBD_STORAGE_VG" ; then
+		status-set blocked "VG '$DRBD_STORAGE_VG' not found"
+		exit 0
+	fi
+
+	if [[ -z "$DRBD_STORAGE_THIN_LV" ]]
+	then
+		juju-log "WARNING: Thick LVM doesn't support (efficient) snapshots."
+
+		plugin=drbdmanage.storage.lvm.Lvm 
+		hdr=Plugin:Lvm
+		xtra=
+	else
+		juju-log "Looking at '$lv_name'"
+
+		lv_name="$DRBD_STORAGE_VG/$DRBD_STORAGE_THIN_LV"
+		lv_attr="$(lvs --noheadings --options lv_attr "$lv_name")"
+		
+		if [[ "$lv_attr" != "  tw"?"-aot"* ]] ; then
+			status-set blocked "LV '$DRBD_STORAGE_VG' not found, or not thin pool. Got attr '$lv_attr'"
+			exit 0
+		fi
+
+		plugin=drbdmanage.storage.lvm_thinlv.LvmThinLv
+		hdr=Plugin:ThinLV
+		xtra="pool-name = $DRBD_STORAGE_THIN_LV"
+	fi
+
+    echo "
+[LOCAL]
+storage-plugin = $plugin
+force=1
+
+[$hdr]
+volume-group = $DRBD_STORAGE_VG
+$xtra
+" > /etc/drbdmanaged.cfg
+
+fi
+
+
+######################################################################
+## Local activation
+######################################################################
+
+if [[ $(drbdmanage ping) != pong ]]
+then
+	status-set blocked "Error pinging local daemon, misconfiguration?"
+	exit 0
+fi
+
+
+######################################################################
+## Register in cluster
+######################################################################
+
+# Already active?
+if [[ $(drbdmanage n -m | wc -l) -gt 1 ]]
+then
+	juju-log "Found active DRBDmanage cluster"
+	status-set active
+	exit 0
+fi
+
+# Do register
+if [[ -n "$DRBD_CLUSTER_NODE" ]]
+then
+	status-set waiting "registering in cluster"
+
+	peer_address="$(getent hosts "$DRBD_CLUSTER_NODE" | cut -f1 -d' ')"
+	juju-log "got address '$peer_address'"
+	if [[ -z "$peer_address" ]] ; then
+		status-set blocked "Can't get address of cluster node '$DRBD_CLUSTER_NODE'"
+		exit 0
+	fi
+
+	my_address="$(ip -oneline route get "$peer_address" | awk '/src (.*)/ { print $5 }')"
+	juju-log "I am from '$my_address'" # ;)
+
+	if ssh -oBatchMode=yes -oStrictHostKeyChecking=ask "$DRBD_CLUSTER_NODE" \
+			drbdmanage new-node --no-autojoin --no-control-volume "$no_stor" \
+				--quiet "$HOSTNAME" "$my_address"
+	then
+		juju-log "Seem to be registered... waiting for a connection."
+
+		status-set waiting "waiting for cluster"
+	else
+		juju-log "Couldn't register in cluster. Bad configuration?"
+		status-set blocked "Can't register in cluster."
+		exit 0
+	fi
+
+	status-set active
+else
+	juju-log "Not registered in cluster."
+	status-set blocked "Not registered to a DRBDmanage cluster."
+fi
+
+
+######################################################################
+## Done
+######################################################################
+exit 0
