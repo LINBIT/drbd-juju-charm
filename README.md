@@ -1,8 +1,10 @@
 # Overview
 
 DRBD is a software-based, shared-nothing, replicated storage solution mirroring the content of block devices (hard disks, partitions, logical volumes etc.) between hosts.  
+The DRBD software defined storage (DRBD SDS) solution provides mirrored block devices (logical volumes).
 
-DRBDmanage is an abstraction layer which takes over management of logical volumes (LVM) and management of configuration files for DRBD. Features of DRBDmanage include creating, resizing, and removing of replicated volumes. Additionally, DRBDmanage handles taking snapshots and creating volumes in consistency groups, and creating and deleting snapshots.
+Its DRBD Manage layer creates configuration files for the lower level DRBD Linux kernel driver and manages logical volumes (LVM). Features of DRBD Manage include creating, resizing and removing of replicated volumes.
+Additionally, DRBD Manage handles taking snapshots and creating volumes in consistency groups, and creating and deleting snapshots.
 
 This can be used in High-Availability setups as well as high-performance cloud-storage; see the links below for more details.
 
@@ -38,7 +40,7 @@ Alternatively, if you're mostly concerned about performance for each single volu
 
 Each DRBD9 resource is limited to 16 copies of the data; that also means that the DRBDmanage control volume can't be more redundant.
 
-The recommendation is to have a few _Control Nodes_footnote[3 to 5 should be a good number.], and to run the other nodes as _Satellites_. See [Types of DRBDmanage nodes](http://www.drbd.org/en/doc/users-guide-90/s-dm-add-node#_types_of_drbdmanage_nodes) in the Users' Guide for more information.
+The recommendation is to have a few _Control Nodes_ (3 to 5 should be a good number), and to run the other nodes as _Satellites_. See [Types of DRBDmanage nodes](http://www.drbd.org/en/doc/users-guide-90/s-dm-add-node#_types_of_drbdmanage_nodes) in the Users' Guide for more information.
 
 # Configuration
 
@@ -48,14 +50,14 @@ This charm will only install _Satellite_ nodes; when deploying a new cluster you
 
 [LINBIT](http://www.linbit.com) provides support for DRBD, DRBDmanage, and the ecosystem around these products.
 
-With the headquarter in Vienna, Austria, an office in Portland, Oregon, and partners all around the world you can get 24/7 support in every timezone.
+With a headquarter in Vienna, Austria, an office in Portland, Oregon, and partners all around the world, you can get 24/7 support in every timezone.
 
-## Further Information about DRBD and DRBDmanage
+## Further Information
 
-- [LINBIT homepage](http://www.linbit.com/)
-- [DRBD homepage](http://www.drbd.org/)
-- [DRBD9 Users' Guide](http://www.drbd.org/en/doc/users-guide-90/about)
-- LINBIT projects on Launchpad: [DRBDmanage](https://launchpad.net/drbdmanage), [DRBD 9 kernel module](https://launchpad.net/drbd9), and [DRBD utils (userspace)](https://launchpad.net/drbd-utils)
+- The [LINBIT homepage](https://www.linbit.com/)
+- The [DRBD SDS homepage](https://www.drbd.org/)
+- The [DRBD9 Users' Guide](https://www.drbd.org/en/doc/users-guide-90/about) is one of the most extensive project documentations in the Open Source world, with (at the last count) more than 170 pages in the A4 PDF format!
+- List of LINBIT's [projects on Launchpad](https://launchpad.net/~linbit): [DRBDmanage](https://launchpad.net/drbdmanage), [DRBD 9 kernel module](https://launchpad.net/drbd9), and [DRBD utils (userspace)](https://launchpad.net/drbd-utils)
 - The DRBD User Mailing list at drbd-user@lists.linbit.com; [web frontend](http://lists.linbit.com/mailman/listinfo/drbd-user) via mailman
 - Performance reports, tips and tricks on the [Blog](https://blogs.linbit.com/)
 
